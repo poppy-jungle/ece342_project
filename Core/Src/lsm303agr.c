@@ -167,7 +167,7 @@ void lsm303agr_init(void) {
 	lsm303agr_write(INT2_CFG_A, 0b00000010, 'a');					// Interrupt 2 on x high event (if more -ve and more +ve)
 	lsm303agr_write(INT2_THS_A, 0b01111111, 'a');					// high/low threshold -> 1g
 	lsm303agr_write(INT2_DURATION_A, 0b00000000, 'a');		// interrupt duration, just make more than 0 -> DO NOT CHANGE
-	lsm303agr_write(CTRL_REG6_A, 0b00100000, 'a');
+	lsm303agr_write(CTRL_REG6_A, 0b00100000, 'a');				// enable INT2 functionality
 	
 	// configure the magnetometer
 	sprintf(buffer, "Initializing magnetometer...\r\n");
