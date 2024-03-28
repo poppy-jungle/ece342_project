@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include "config.h"
 #include "lsm303agr.h"
+#include "lcd1602.h"
 #include <stdio.h>
 #include <string.h>
 /* USER CODE END Includes */
@@ -45,6 +46,7 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
+TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim6;
 
 UART_HandleTypeDef huart3;
@@ -64,6 +66,7 @@ static void MX_I2C1_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -81,6 +84,9 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
 	char msg[100];
+	char* accelerating = "Accelerating... ";
+	char* decelerating = "Decelerating... ";
+	char* cruising = "Cruising/Idle...";
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -106,10 +112,16 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
   MX_TIM6_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
+	lcd_init();
+	lcd_put_cur(0, 0);
 	lsm303agr_init();
 	HAL_Delay(1000);
 	HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);				// signal ready
+	lcd_send_string("Init Complete!");
+	HAL_Delay(1000);
+	lcd_clear();
 	lsm303agr_fifo_en();															// kick start measurements
 	
   /* USER CODE END 2 */
@@ -124,7 +136,7 @@ int main(void)
 		int_acc = 0;													// reset
 			
 		
-		lsm303agr_fifo_save();								// read FIFO (25ms)
+		lsm303agr_fifo_save();								// read FIFO (25ms + 5ms for avg??)
 		lsm303agr_bypass_en();								// reset FIFO (??ms)
 		lsm303agr_fifo_en();									// enable FIFO to read in background (??ms) -> next cycle begins
 		/*
@@ -140,18 +152,36 @@ int main(void)
 		
 		// calculations and stuff (??ms)
 		
-		// write to display (1ms -> send and forget)
+		lcd_clear();													// clear (2ms)
+		lcd_put_cur(0, 0);										// write to display (??ms)
+		switch (xState) {
+			case 0: lcd_send_string(cruising); break;
+			case 1: lcd_send_string(accelerating); break;
+			case 2: lcd_send_string(decelerating); break;
+			default: break;
+		}
+		lcd_put_cur(1, 0);
+		lcd_send_string("Direction:");
+		lcd_put_cur(1, 10);
+		lcd_send_string(magneticField.direction);
+		
 		HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
 		
-    /* USER CODE END WHILE */	
-		
-		
+    /* USER CODE END WHILE */
+
     /* USER CODE BEGIN 3 */
   }
 	
 	// Crash code
-	HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
-	print_msg("Crash!!!\r\n");
+	lcd_clear();
+	lcd_put_cur(0, 0);
+	lcd_send_string("Crash!!!");
+	lcd_put_cur(1, 0);
+	lcd_send_string("Check Logs!!!");
+	while (1) {
+		HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
+		HAL_Delay(500);
+	}
 	// something something print here
 	// something something log here
 		
@@ -235,6 +265,52 @@ static void MX_I2C1_Init(void)
   /* USER CODE BEGIN I2C1_Init 2 */
 
   /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 168-1;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 0xffff-1;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
 
 }
 

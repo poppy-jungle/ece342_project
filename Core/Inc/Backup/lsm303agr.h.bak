@@ -31,6 +31,7 @@
 #define CTRL_REG3_A 0x22
 #define CTRL_REG4_A 0x23
 #define CTRL_REG5_A 0x24
+#define CTRL_REG6_A 0x25
 #define OUT_X_L_A 0x28
 #define OUT_X_H_A 0x29
 #define OUT_Y_L_A 0x2a
@@ -40,6 +41,7 @@
 #define FIFO_CTRL_REG_A 0x2e
 #define INT2_CFG_A 0x34
 #define INT2_THS_A 0x36
+#define INT2_DURATION_A 0x37
 
 // Magnetometer registers
 #define CFG_REG_A_M 0x60
@@ -56,6 +58,7 @@
 
 // interrupt var
 extern int int_acc;
+extern int int_crash;
 
 /* 
 	Calibration data:
@@ -75,6 +78,9 @@ struct ac {
 	double z;
 };
 
+// extern stuff
+extern struct ac accelerationBuffer[FIFO_SIZE];
+
 struct mg {
 	double x;
 	double y;
@@ -86,11 +92,12 @@ uint8_t lsm303agr_read(uint8_t reg, char dev);
 HAL_StatusTypeDef lsm303agr_write(uint8_t reg, uint8_t val, char dev);
 void lsm303agr_init(void);
 void lsm303agr_poll_xyz(struct ac* data);
-void lsm303agr_poll_xyz_mag(struct mg* data);
+void lsm303agr_poll_xyz_mag(void);
 void lsm303agr_fifo_en(void);
 void lsm303agr_bypass_en(void);
 void lsm303agr_burst_read(void);
 void burst_buf_to_acc_data(struct ac* data);
 void lsm303agr_fifo_save(void);
+void lsm303agr_poll_temp(void);
 
 #endif

@@ -56,9 +56,10 @@
 // constants
 #define FIFO_SIZE 10
 
-// interrupt var
+// interrupt var and state
 extern int int_acc;
 extern int int_crash;
+extern int xState;								
 
 /* 
 	Calibration data:
@@ -99,5 +100,6 @@ void lsm303agr_burst_read(void);
 void burst_buf_to_acc_data(struct ac* data);
 void lsm303agr_fifo_save(void);
 void lsm303agr_poll_temp(void);
+extern struct mg magneticField;
 
 #endif

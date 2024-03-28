@@ -15,7 +15,10 @@ struct ac acceleration;
 struct mg magneticField;
 struct ac accelerationBuffer[FIFO_SIZE] = { 0 };
 uint8_t burstBuf[6 * FIFO_SIZE] = { 0 };
+
+// states
 int int_acc;
+int int_crash = 0;
 
 // hopefully the read write addr should be same
 uint8_t lsm303agr_read(uint8_t reg, char dev) {
@@ -54,7 +57,8 @@ void lsm303agr_poll_xyz(struct ac* data) {
 	data->z = (data->z) / 512.0 * 2.0 - 1;			// offset gravity
 }
 
-void lsm303agr_poll_xyz_mag(struct mg* data) {
+void lsm303agr_poll_xyz_mag() {
+	struct mg* data = &magneticField;
 	uint8_t xh, xl;
 	uint8_t yh, yl;
 	uint8_t zh, zl;
@@ -156,11 +160,14 @@ void lsm303agr_init(void) {
 	sprintf(buffer, "Initializing accelerometer...\r\n");
 	HAL_UART_Transmit(&huart3, (uint8_t*)buffer, strlen(buffer), 1000);
 	lsm303agr_write(CTRL_REG1_A, 0b01010111, 'a');				// data rate select: 100Hz
-	lsm303agr_write(INT2_CFG_A, 0b00000011, 'a');					// Interrupt 2 on x high/low event
-	lsm303agr_write(INT2_THS_A, 0b00111111, 'a');					// high/low threshold -> 1g
+	// lsm303agr_write(CTRL_REG6_A, 0b00100000, 'a');
 	lsm303agr_bypass_en();																// default mode: bypass
 	/* skip high-pass filter config */
 	/* skip interrupt pin config */
+	lsm303agr_write(INT2_CFG_A, 0b00000010, 'a');					// Interrupt 2 on x high event (if more -ve and more +ve)
+	lsm303agr_write(INT2_THS_A, 0b01111111, 'a');					// high/low threshold -> 1g
+	lsm303agr_write(INT2_DURATION_A, 0b00000000, 'a');		// interrupt duration, just make more than 0 -> DO NOT CHANGE
+	lsm303agr_write(CTRL_REG6_A, 0b00100000, 'a');				// enable INT2 functionality
 	
 	// configure the magnetometer
 	sprintf(buffer, "Initializing magnetometer...\r\n");
@@ -208,7 +215,7 @@ void lsm303agr_init(void) {
 	HAL_UART_Transmit(&huart3, (uint8_t*)buffer, strlen(buffer), 1000);
 	HAL_TIM_Base_Init(&htim6);
 	HAL_TIM_Base_Start(&htim6);
-	lsm303agr_poll_xyz_mag(&magneticField);
+	lsm303agr_poll_xyz_mag();
 	HAL_TIM_Base_Stop(&htim6);
 	sprintf(buffer, "Current x magnetic field: %funits\r\n", magneticField.x);
 	HAL_UART_Transmit(&huart3, (uint8_t*)buffer, strlen(buffer), 1000);
@@ -306,6 +313,22 @@ void lsm303agr_fifo_save(void) {
 		lsm303agr_poll_xyz(&accelerationBuffer[i]);
 	}
 }
+
+void lsm303agr_poll_temp(void) {
+	tempL = lsm303agr_read(OUT_TEMP_L_A, 'a');
+	tempH = lsm303agr_read(OUT_TEMP_H_A, 'a');
+	temp = twosCompToInt(tempH) + 25;
+}
+
+
+
+
+
+
+
+
+
+
 
 // fix this later, spent 3 days in total, still unsure why it doesn't work, move on
 void lsm303agr_burst_read(void) {

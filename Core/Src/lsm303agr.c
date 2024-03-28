@@ -19,6 +19,7 @@ uint8_t burstBuf[6 * FIFO_SIZE] = { 0 };
 // states
 int int_acc;
 int int_crash = 0;
+int xState = 0;							// 0 -> idle, 1 -> slow down, 2 -> speed up
 
 // hopefully the read write addr should be same
 uint8_t lsm303agr_read(uint8_t reg, char dev) {
@@ -92,7 +93,7 @@ void lsm303agr_poll_xyz_mag() {
     data->direction = " E";
   }
   else if (headingDegrees > 101.25 && headingDegrees < 123.75) {
-    data->direction = " 	ESE";
+    data->direction = " ESE";
   }
   else if (headingDegrees > 123.75 && headingDegrees < 146.25) {
     data->direction = " SE";
@@ -312,6 +313,14 @@ void lsm303agr_fifo_save(void) {
 	for (int i = 0; i < FIFO_SIZE; i++) {
 		lsm303agr_poll_xyz(&accelerationBuffer[i]);
 	}
+	double avgX = 0;
+	for (int i = 0; i < FIFO_SIZE; i++) {
+		avgX += accelerationBuffer[i].x;
+	}
+	avgX /= FIFO_SIZE;
+	if (avgX < -0.1) xState = 1;
+	else if (avgX < 0.1) xState = 0;
+	else xState = 2;
 }
 
 void lsm303agr_poll_temp(void) {

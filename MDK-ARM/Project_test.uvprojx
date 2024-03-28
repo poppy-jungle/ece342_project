@@ -406,6 +406,11 @@
               <FilePath>..\Core\Src\lsm303agr.c</FilePath>
             </File>
             <File>
+              <FileName>lcd1602.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Core\Src\lcd1602.c</FilePath>
+            </File>
+            <File>
               <FileName>main.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Core/Src/main.c</FilePath>

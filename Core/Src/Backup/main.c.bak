@@ -23,6 +23,8 @@
 /* USER CODE BEGIN Includes */
 #include "config.h"
 #include "lsm303agr.h"
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -106,16 +108,53 @@ int main(void)
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
 	lsm303agr_init();
+	HAL_Delay(1000);
+	HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);				// signal ready
+	lsm303agr_fifo_en();															// kick start measurements
+	
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
+  while (int_crash == 0)
   {
-    /* USER CODE END WHILE */
-
+		while (int_acc == 0) {								// spin (120-140ms)
+			HAL_Delay(0);
+		}
+		int_acc = 0;													// reset
+			
+		
+		lsm303agr_fifo_save();								// read FIFO (25ms)
+		lsm303agr_bypass_en();								// reset FIFO (??ms)
+		lsm303agr_fifo_en();									// enable FIFO to read in background (??ms) -> next cycle begins
+		/*
+		for (int i = 0; i < FIFO_SIZE; i++) {
+			sprintf(msg, "FIFO[%d]: %f, %f, %f, %d\r\n", i, accelerationBuffer[i].x, accelerationBuffer[i].y, accelerationBuffer[i].z, __HAL_TIM_GET_COUNTER(&htim6) / 10);
+			HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), 1000);
+		}
+		*/
+		
+		lsm303agr_poll_temp();								// get temp (2ms)
+		
+		lsm303agr_poll_xyz_mag();							// get direction	(2ms)
+		
+		// calculations and stuff (??ms)
+		
+		// write to display (1ms -> send and forget)
+		HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+		
+    /* USER CODE END WHILE */	
+		
+		
     /* USER CODE BEGIN 3 */
   }
+	
+	// Crash code
+	HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
+	print_msg("Crash!!!\r\n");
+	// something something print here
+	// something something log here
+		
   /* USER CODE END 3 */
 }
 
@@ -423,6 +462,9 @@ static void MX_GPIO_Init(void)
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI4_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI4_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
