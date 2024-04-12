@@ -18,11 +18,15 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "fatfs.h"
+
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "config.h"
 #include "lsm303agr.h"
+#include "lcd1602.h"
+#include "fatfs_sd.h"
 #include <stdio.h>
 #include <string.h>
 /* USER CODE END Includes */
@@ -45,8 +49,12 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
+SPI_HandleTypeDef hspi1;
+
+TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim6;
 
+UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart3_tx;
 
@@ -64,13 +72,41 @@ static void MX_I2C1_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_TIM1_Init(void);
+static void MX_SPI1_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+FATFS fs;
+FIL file;
+FRESULT fresult;
+char buffer[1024];
 
+UINT br, bw;
+
+//capacity
+FATFS *pfs;
+DWORD fre_clust;
+uint32_t total, free_space;
+
+int buffer_size(char *buffer)
+{
+	int i=0;
+	while (*buffer++ != '\0') i++;
+	return i;
+}
+
+void buffer_clear(void)
+{
+	for (int i=0; i<1024; i++)
+	{
+		buffer[i] = '\0';
+	}
+}
 /* USER CODE END 0 */
 
 /**
@@ -81,6 +117,9 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
 	char msg[100];
+	char* accelerating = "Accelerating... ";
+	char* decelerating = "Decelerating... ";
+	char* cruising = "Cruising/Idle...";
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -106,10 +145,31 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
   MX_TIM6_Init();
+  MX_TIM1_Init();
+  MX_SPI1_Init();
+  MX_USART2_UART_Init();
+  MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
+	
+	// Open sd and write something
+	fresult = f_mount(&fs, "/", 1);
+	sprintf(msg, "fresult: %d", fresult);
+	print_msg(msg);
+	fresult = f_open(&file, "Data.txt", FA_CREATE_ALWAYS | FA_WRITE);
+	sprintf(msg, "fresult: %d", fresult);
+	print_msg(msg);
+	sprintf(buffer, "Logging travel data\r\n");
+	fresult = f_write(&file, buffer, buffer_size(buffer), &bw);
+	
+	// other inits
+	lcd_init();																			// need led plugged in?
+	lcd_put_cur(0, 0);
 	lsm303agr_init();
 	HAL_Delay(1000);
 	HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);				// signal ready
+	lcd_send_string("Init Complete!");
+	HAL_Delay(1000);
+	lcd_clear();
 	lsm303agr_fifo_en();															// kick start measurements
 	
   /* USER CODE END 2 */
@@ -124,7 +184,7 @@ int main(void)
 		int_acc = 0;													// reset
 			
 		
-		lsm303agr_fifo_save();								// read FIFO (25ms)
+		lsm303agr_fifo_save();								// read FIFO (25ms + 5ms for avg??)
 		lsm303agr_bypass_en();								// reset FIFO (??ms)
 		lsm303agr_fifo_en();									// enable FIFO to read in background (??ms) -> next cycle begins
 		/*
@@ -140,18 +200,45 @@ int main(void)
 		
 		// calculations and stuff (??ms)
 		
-		// write to display (1ms -> send and forget)
+		lcd_clear();													// clear (2ms)
+		lcd_put_cur(0, 0);										// write to display (??ms)
+		switch (xState) {
+			case 0: lcd_send_string(cruising); break;
+			case 1: lcd_send_string(accelerating); break;
+			case 2: lcd_send_string(decelerating); break;
+			default: break;
+		}
+		lcd_put_cur(1, 0);
+		lcd_send_string("Direction:");
+		lcd_put_cur(1, 10);
+		lcd_send_string(magneticField.direction);
+		
 		HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
 		
-    /* USER CODE END WHILE */	
-		
-		
+		// write -> 5.9ms
+    /* USER CODE END WHILE */
+
     /* USER CODE BEGIN 3 */
   }
 	
 	// Crash code
-	HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
-	print_msg("Crash!!!\r\n");
+	lcd_clear();
+	lcd_put_cur(0, 0);
+	lcd_send_string("Crash!!!");
+	lcd_put_cur(1, 0);
+	lcd_send_string("Check Logs!!!");
+	
+	// safely unmount sd
+	/*
+	f_close(&file);
+	fresult = f_mount(NULL, "/", 1);
+	*/
+	
+	// status led
+	while (1) {
+		HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
+		HAL_Delay(500);
+	}
 	// something something print here
 	// something something log here
 		
@@ -239,6 +326,90 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief SPI1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI1_Init(void)
+{
+
+  /* USER CODE BEGIN SPI1_Init 0 */
+
+  /* USER CODE END SPI1_Init 0 */
+
+  /* USER CODE BEGIN SPI1_Init 1 */
+
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI1_Init 2 */
+
+  /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 168-1;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 0xffff-1;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
+
+}
+
+/**
   * @brief TIM6 Initialization Function
   * @param None
   * @retval None
@@ -273,6 +444,39 @@ static void MX_TIM6_Init(void)
   /* USER CODE BEGIN TIM6_Init 2 */
 
   /* USER CODE END TIM6_Init 2 */
+
+}
+
+/**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
 
 }
 

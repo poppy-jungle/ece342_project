@@ -9,6 +9,7 @@
 
 #include "stm32f4xx_hal.h"
 #include "stm32f4xx_hal_gpio.h"
+#include "main.h"
 
 /*********** Define the LCD PINS below ****************/
 
@@ -35,6 +36,7 @@ extern TIM_HandleTypeDef timer;
 void delay (uint16_t us)
 {
 	__HAL_TIM_SET_COUNTER(&timer, 0);
+	HAL_TIM_Base_Start(&timer);
 	while (__HAL_TIM_GET_COUNTER(&timer) < us);
 }
 

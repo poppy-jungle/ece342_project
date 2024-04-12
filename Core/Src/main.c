@@ -18,12 +18,14 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "fatfs.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "config.h"
 #include "lsm303agr.h"
 #include "lcd1602.h"
+#include "fatfs_sd.h"
 #include <stdio.h>
 #include <string.h>
 /* USER CODE END Includes */
@@ -46,9 +48,12 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
+SPI_HandleTypeDef hspi1;
+
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim6;
 
+UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart3_tx;
 
@@ -67,13 +72,40 @@ static void MX_USART3_UART_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
 static void MX_TIM6_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_SPI1_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+FATFS fs;
+FIL file;
+FRESULT fresult;
+char buffer[1024];
 
+UINT br, bw;
+
+//capacity
+FATFS *pfs;
+DWORD fre_clust;
+uint32_t total, free_space;
+
+int buffer_size(char *buffer)
+{
+	int i=0;
+	while (*buffer++ != '\0') i++;
+	return i;
+}
+
+void buffer_clear(void)
+{
+	for (int i=0; i<1024; i++)
+	{
+		buffer[i] = '\0';
+	}
+}
 /* USER CODE END 0 */
 
 /**
@@ -87,6 +119,7 @@ int main(void)
 	char* accelerating = "Accelerating... ";
 	char* decelerating = "Decelerating... ";
 	char* cruising = "Cruising/Idle...";
+	struct ac accelerationBufferOld[FIFO_SIZE];
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -113,8 +146,25 @@ int main(void)
   MX_USB_OTG_FS_PCD_Init();
   MX_TIM6_Init();
   MX_TIM1_Init();
+  MX_SPI1_Init();
+  MX_USART2_UART_Init();
+  MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
-	lcd_init();
+	
+	// Open sd and write something
+	fresult = f_mount(&fs, "/", 1);
+	sprintf(msg, "fresult: %d", fresult);
+	print_msg(msg);
+	fresult = f_open(&file, "Data.txt", FA_CREATE_ALWAYS | FA_WRITE);
+	sprintf(msg, "fresult: %d", fresult);
+	print_msg(msg);
+	sprintf(buffer, "Logging travel data\r\n");
+	fresult = f_write(&file, buffer, buffer_size(buffer), &bw);
+	sprintf(msg, "fresult: %d", fresult);
+	print_msg(msg);
+	
+	// other inits
+	lcd_init();																			// need led plugged in?
 	lcd_put_cur(0, 0);
 	lsm303agr_init();
 	HAL_Delay(1000);
@@ -134,17 +184,28 @@ int main(void)
 			HAL_Delay(0);
 		}
 		int_acc = 0;													// reset
-			
 		
+			//lsm303agr_write(CTRL_REG6_A, 0b00000000, 'a');				// enable INT2 functionality
+
 		lsm303agr_fifo_save();								// read FIFO (25ms + 5ms for avg??)
 		lsm303agr_bypass_en();								// reset FIFO (??ms)
+		/*
+		for (int i = 0; i < FIFO_SIZE; i++) {	// cache old
+			accelerationBufferOld[i].x = accelerationBuffer[i].x;
+		}
+		*/
+		// lsm303agr_write(CTRL_REG6_A, 0b00100000, 'a');				// enable INT2 functionality
+
 		lsm303agr_fifo_en();									// enable FIFO to read in background (??ms) -> next cycle begins
+
+		
 		/*
 		for (int i = 0; i < FIFO_SIZE; i++) {
 			sprintf(msg, "FIFO[%d]: %f, %f, %f, %d\r\n", i, accelerationBuffer[i].x, accelerationBuffer[i].y, accelerationBuffer[i].z, __HAL_TIM_GET_COUNTER(&htim6) / 10);
 			HAL_UART_Transmit(&huart3, (uint8_t*)msg, strlen(msg), 1000);
 		}
 		*/
+		
 		
 		lsm303agr_poll_temp();								// get temp (2ms)
 		
@@ -154,10 +215,11 @@ int main(void)
 		
 		lcd_clear();													// clear (2ms)
 		lcd_put_cur(0, 0);										// write to display (??ms)
+		char vehicleStatus[20];
 		switch (xState) {
-			case 0: lcd_send_string(cruising); break;
-			case 1: lcd_send_string(accelerating); break;
-			case 2: lcd_send_string(decelerating); break;
+			case 0: lcd_send_string(cruising); strcpy(vehicleStatus, cruising); break;
+			case 1: lcd_send_string(accelerating); strcpy(vehicleStatus, accelerating); break;
+			case 2: lcd_send_string(decelerating); strcpy(vehicleStatus, decelerating); break;
 			default: break;
 		}
 		lcd_put_cur(1, 0);
@@ -165,8 +227,12 @@ int main(void)
 		lcd_put_cur(1, 10);
 		lcd_send_string(magneticField.direction);
 		
-		HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+		// write -> 5.9ms
+		sprintf(buffer, "Temp: %dC\tHeading: %s\t\tState: %s\t\tAcceleration %f %f %f %f %f %f %f %f %f %f\r\n", temp, magneticField.direction, vehicleStatus, accelerationBuffer[0].x, accelerationBuffer[1].x, accelerationBuffer[2].x, accelerationBuffer[3].x, accelerationBuffer[4].x, accelerationBuffer[5].x, accelerationBuffer[6].x, accelerationBuffer[7].x, accelerationBuffer[8].x, accelerationBuffer[9].x);
+		fresult = f_write(&file, buffer, buffer_size(buffer), &bw);
 		
+		HAL_GPIO_TogglePin(LD1_GPIO_Port, LD1_Pin);
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -178,6 +244,36 @@ int main(void)
 	lcd_send_string("Crash!!!");
 	lcd_put_cur(1, 0);
 	lcd_send_string("Check Logs!!!");
+	sprintf(buffer, "Vehicle crashed!!!\r\n");
+	fresult = f_write(&file, buffer, buffer_size(buffer), &bw);
+	sprintf(buffer, "Showing the final %d samples of accelerometer data...\r\n", FIFO_SIZE * 2);
+	fresult = f_write(&file, buffer, buffer_size(buffer), &bw);
+	lsm303agr_fifo_save();
+	/*
+	for (int i = 0; i < FIFO_SIZE; i++) {
+		sprintf(buffer, "Data %d: Acceleration: %fG\r\n", i, accelerationBufferOld[i].x);
+		fresult = f_write(&file, buffer, buffer_size(buffer), &bw);
+	}
+	*/
+	for (int i = 0; i < FIFO_SIZE; i++) {
+		sprintf(buffer, "Data %d: Acceleration: %fG\r\n", i, accelerationBuffer[i].x);
+		fresult = f_write(&file, buffer, buffer_size(buffer), &bw);
+	}
+	// lsm303agr_fifo_save();								// read FIFO (25ms + 5ms for avg??)
+	/*
+	for (int i = 0; i < FIFO_SIZE; i++) {
+		sprintf(buffer, "Data %d: Acceleration: %fG\r\n", i, accelerationBuffer[i].x);
+		fresult = f_write(&file, buffer, buffer_size(buffer), &bw);
+	}
+	*/
+	sprintf(buffer, "Black box data complete.x\r\n");
+	fresult = f_write(&file, buffer, buffer_size(buffer), &bw);
+	
+	// safely unmount sd, required for file to be written
+	f_close(&file);
+	fresult = f_mount(NULL, "/", 1);
+	
+	// status led
 	while (1) {
 		HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
 		HAL_Delay(500);
@@ -269,6 +365,44 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief SPI1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI1_Init(void)
+{
+
+  /* USER CODE BEGIN SPI1_Init 0 */
+
+  /* USER CODE END SPI1_Init 0 */
+
+  /* USER CODE BEGIN SPI1_Init 1 */
+
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI1_Init 2 */
+
+  /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
   * @brief TIM1 Initialization Function
   * @param None
   * @retval None
@@ -349,6 +483,39 @@ static void MX_TIM6_Init(void)
   /* USER CODE BEGIN TIM6_Init 2 */
 
   /* USER CODE END TIM6_Init 2 */
+
+}
+
+/**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
 
 }
 
@@ -461,7 +628,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0|GPIO_PIN_3, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3|GPIO_PIN_4, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LD1_Pin|LD3_Pin|LD2_Pin, GPIO_PIN_RESET);
@@ -488,8 +655,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PA3 */
-  GPIO_InitStruct.Pin = GPIO_PIN_3;
+  /*Configure GPIO pins : PA3 PA4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_3|GPIO_PIN_4;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;

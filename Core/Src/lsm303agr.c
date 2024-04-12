@@ -74,7 +74,7 @@ void lsm303agr_poll_xyz_mag() {
 	data->z = twosCompToInt_16bit((uint16_t)((zh << 8) | (zl)));		
 	double headingRadians = atan2(-data->y, data->x);
 	double headingDegrees = headingRadians * 180 / M_PI;
-	headingDegrees += MAG_DECLINATION_TORONTO - 45;
+	headingDegrees += MAG_DECLINATION_TORONTO/* - 45*/;
 	if (headingDegrees < 0)
 		headingDegrees += 360;
 	if (headingDegrees > 348.75 || headingDegrees < 11.25) {
@@ -173,7 +173,7 @@ void lsm303agr_init(void) {
 	// configure the magnetometer
 	sprintf(buffer, "Initializing magnetometer...\r\n");
 	HAL_UART_Transmit(&huart3, (uint8_t*)buffer, strlen(buffer), 1000);
-	lsm303agr_write(CFG_REG_A_M, 0b00000000, 'm');				// selected data rate: 10Hz
+	lsm303agr_write(CFG_REG_A_M, 0b00001000, 'm');				// selected data rate: 10Hz
 	lsm303agr_write(CFG_REG_C_M, 0b00010001, 'm');				// enable interrupt, BDU enable?
 	
 	// turn on temperature sensor
@@ -299,7 +299,7 @@ void lsm303agr_init(void) {
 
 void lsm303agr_fifo_en(void) {
 	lsm303agr_write(CTRL_REG3_A, 0b00000010, 'a');						// enable overflow interrupt
-	lsm303agr_write(FIFO_CTRL_REG_A, (uint8_t)(0b01000000 | (uint8_t)FIFO_SIZE), 'a');				// fifo mode, fifo threshold is 32
+	lsm303agr_write(FIFO_CTRL_REG_A, (uint8_t)(0b11100000 | (uint8_t)FIFO_SIZE), 'a');				// fifo mode, fifo threshold is 32
 	lsm303agr_write(CTRL_REG5_A, 0b01000000, 'a');						// enable fifo
 }
 

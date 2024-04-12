@@ -59,7 +59,7 @@
 // interrupt var and state
 extern int int_acc;
 extern int int_crash;
-extern int xState;								
+extern int xState;	
 
 /* 
 	Calibration data:
@@ -81,6 +81,7 @@ struct ac {
 
 // extern stuff
 extern struct ac accelerationBuffer[FIFO_SIZE];
+extern int temp;
 
 struct mg {
 	double x;
