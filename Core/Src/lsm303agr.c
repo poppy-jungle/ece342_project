@@ -72,7 +72,7 @@ void lsm303agr_poll_xyz_mag() {
 	data->x = twosCompToInt_16bit((uint16_t)((xh << 8) | (xl)));
 	data->y = twosCompToInt_16bit((uint16_t)((yh << 8) | (yl)));
 	data->z = twosCompToInt_16bit((uint16_t)((zh << 8) | (zl)));		
-	double headingRadians = atan2(-data->y, data->x);
+	double headingRadians = atan2(data->x, data->y);
 	double headingDegrees = headingRadians * 180 / M_PI;
 	headingDegrees += MAG_DECLINATION_TORONTO/* - 45*/;
 	if (headingDegrees < 0)
@@ -318,7 +318,8 @@ void lsm303agr_fifo_save(void) {
 		avgX += accelerationBuffer[i].x;
 	}
 	avgX /= FIFO_SIZE;
-	if (avgX < -0.1) xState = 1;
+	if (avgX > 0.95 || avgX < -0.95) xState = 3;
+	else if (avgX < -0.1) xState = 1;
 	else if (avgX < 0.1) xState = 0;
 	else xState = 2;
 }

@@ -119,6 +119,7 @@ int main(void)
 	char* accelerating = "Accelerating... ";
 	char* decelerating = "Decelerating... ";
 	char* cruising = "Cruising/Idle...";
+	char* crashing = "Crashing...";
 	struct ac accelerationBufferOld[FIFO_SIZE];
   /* USER CODE END 1 */
 
@@ -183,12 +184,15 @@ int main(void)
 		while (int_acc == 0) {								// spin (120-140ms)
 			HAL_Delay(0);
 		}
-		int_acc = 0;													// reset
+		int_acc = 0;			// reset
 		
-			//lsm303agr_write(CTRL_REG6_A, 0b00000000, 'a');				// enable INT2 functionality
+		// lsm303agr_write(CTRL_REG6_A, 0b00000000, 'a');				// enable INT2 functionality
 
+		__disable_irq();
 		lsm303agr_fifo_save();								// read FIFO (25ms + 5ms for avg??)
+		__enable_irq();
 		lsm303agr_bypass_en();								// reset FIFO (??ms)
+		// __enable_irq();
 		/*
 		for (int i = 0; i < FIFO_SIZE; i++) {	// cache old
 			accelerationBufferOld[i].x = accelerationBuffer[i].x;
@@ -197,7 +201,8 @@ int main(void)
 		// lsm303agr_write(CTRL_REG6_A, 0b00100000, 'a');				// enable INT2 functionality
 
 		lsm303agr_fifo_en();									// enable FIFO to read in background (??ms) -> next cycle begins
-
+		// __enable_irq();
+		// lsm303agr_write(CTRL_REG6_A, 0b00100000, 'a');				// enable INT2 functionality
 		
 		/*
 		for (int i = 0; i < FIFO_SIZE; i++) {
@@ -220,6 +225,7 @@ int main(void)
 			case 0: lcd_send_string(cruising); strcpy(vehicleStatus, cruising); break;
 			case 1: lcd_send_string(accelerating); strcpy(vehicleStatus, accelerating); break;
 			case 2: lcd_send_string(decelerating); strcpy(vehicleStatus, decelerating); break;
+			case 3: lcd_send_string(crashing); strcpy(vehicleStatus, crashing); break;
 			default: break;
 		}
 		lcd_put_cur(1, 0);
@@ -246,27 +252,22 @@ int main(void)
 	lcd_send_string("Check Logs!!!");
 	sprintf(buffer, "Vehicle crashed!!!\r\n");
 	fresult = f_write(&file, buffer, buffer_size(buffer), &bw);
-	sprintf(buffer, "Showing the final %d samples of accelerometer data...\r\n", FIFO_SIZE * 2);
+	sprintf(buffer, "Showing the final %d samples of accelerometer data...\r\n", FIFO_SIZE);
 	fresult = f_write(&file, buffer, buffer_size(buffer), &bw);
-	lsm303agr_fifo_save();
 	/*
 	for (int i = 0; i < FIFO_SIZE; i++) {
 		sprintf(buffer, "Data %d: Acceleration: %fG\r\n", i, accelerationBufferOld[i].x);
 		fresult = f_write(&file, buffer, buffer_size(buffer), &bw);
 	}
 	*/
+	__disable_irq();
+	lsm303agr_fifo_save();								// read FIFO (25ms + 5ms for avg??)
+	__enable_irq();
 	for (int i = 0; i < FIFO_SIZE; i++) {
 		sprintf(buffer, "Data %d: Acceleration: %fG\r\n", i, accelerationBuffer[i].x);
 		fresult = f_write(&file, buffer, buffer_size(buffer), &bw);
 	}
-	// lsm303agr_fifo_save();								// read FIFO (25ms + 5ms for avg??)
-	/*
-	for (int i = 0; i < FIFO_SIZE; i++) {
-		sprintf(buffer, "Data %d: Acceleration: %fG\r\n", i, accelerationBuffer[i].x);
-		fresult = f_write(&file, buffer, buffer_size(buffer), &bw);
-	}
-	*/
-	sprintf(buffer, "Black box data complete.x\r\n");
+	sprintf(buffer, "Black box data complete.\r\n");
 	fresult = f_write(&file, buffer, buffer_size(buffer), &bw);
 	
 	// safely unmount sd, required for file to be written
